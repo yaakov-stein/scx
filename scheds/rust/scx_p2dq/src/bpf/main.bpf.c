@@ -1440,9 +1440,12 @@ static bool load_balance_timer(void)
 			llcx->lb_llc_id = MAX_LLCS;
 
 		dbg("LB llcx[%u] %llu lb_llcx[%u] %llu imbalance %lli",
-			llc_id, llcx->load, lb_llc_id, lb_llcx->load, load_imbalance);
+		llc_id, llcx->load, lb_llc_id, lb_llcx->load, load_imbalance);
 	}
-	dbg("LB Total load %llu, Total interactive %llu", load_sum, interactive_sum);
+
+	dbg("LB Total load %llu, Total interactive %llu",
+	    load_sum, interactive_sum);
+
 	llc_lb_offset = (llc_lb_offset % (nr_llcs - 1)) + 1;
 
 	if (!autoslice || load_sum == 0 || load_sum < interactive_sum)
