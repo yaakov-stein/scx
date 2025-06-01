@@ -687,16 +687,16 @@ static s32 pick_idle_cpu(struct task_struct *p, task_ctx *taskc,
 	}
 
 	if (llcx->lb_llc_id < MAX_LLCS &&
-	    taskc->llc_runs > min_llc_runs_pick2 &&
-	    (!interactive || dispatch_lb_interactive)) {
-	    u32 target_llc_id = llcx->lb_llc_id;
-	    llcx->lb_llc_id = MAX_LLCS;
-	    if (!(llcx = lookup_llc_ctx(target_llc_id)))
-	        goto found_cpu;
-	    else
-	        taskc->llc_id = llcx->id;
+		taskc->llc_runs > min_llc_runs_pick2 &&
+		(!interactive || dispatch_lb_interactive)) {
+		u32 target_llc_id = llcx->lb_llc_id;
+		llcx->lb_llc_id = MAX_LLCS;
+		if (!(llcx = lookup_llc_ctx(target_llc_id)))
+			goto found_cpu;
+		else
+			taskc->llc_id = llcx->id;
 
-	    stat_inc(P2DQ_STAT_SELECT_PICK2);
+		stat_inc(P2DQ_STAT_SELECT_PICK2);
 	}
 
 	if (eager_load_balance && wakeup_lb_busy > 0) {
