@@ -1440,7 +1440,7 @@ static bool load_balance_timer(void)
 			llcx->lb_llc_id = MAX_LLCS;
 
 		dbg("LB llcx[%u] %llu lb_llcx[%u] %llu imbalance %lli",
-		llc_id, llcx->load, lb_llc_id, lb_llcx->load, load_imbalance);
+			llc_id, llcx->load, lb_llc_id, lb_llcx->load, load_imbalance);
 	}
 
 	dbg("LB Total load %llu, Total interactive %llu",
