@@ -566,7 +566,7 @@ static s32 pick_idle_cpu(struct task_struct *p, task_ctx *taskc,
 			 s32 prev_cpu, u64 wake_flags, bool *is_idle)
 {
 	const struct cpumask *idle_smtmask, *idle_cpumask;
-	struct llc_ctx *llcx, *lb_llcx;
+	struct llc_ctx *llcx;
 	bool interactive = is_interactive(taskc);
 	s32 cpu = prev_cpu;
 
@@ -602,16 +602,14 @@ static s32 pick_idle_cpu(struct task_struct *p, task_ctx *taskc,
 
 	if (llcx->lb_llc_id < MAX_LLCS &&
 		taskc->llc_runs > min_llc_runs_pick2 &&
-		!interactive) {
-		if (!(lb_llcx = lookup_llc_ctx(llcx->lb_llc_id))) {
-			goto found_cpu;
-		} else {
-			if ((100 * llcx->load) > ((100 + LOAD_BALANCE_SLACK) * lb_llcx->load)) {
-				llcx = lb_llcx;
-				taskc->llc_id = llcx->id;
-			}
-		}
+		(!interactive || dispatch_lb_interactive)) {
+		u32 target_llc_id = llcx->lb_llc_id;
 		llcx->lb_llc_id = MAX_LLCS;
+		if (!(llcx = lookup_llc_ctx(target_llc_id)))
+			goto found_cpu;
+		else
+			taskc->llc_id = llcx->id;
+
 		stat_inc(P2DQ_STAT_SELECT_PICK2);
 	}
 
@@ -1429,19 +1427,17 @@ static bool load_balance_timer(void)
 		interactive_sum += llcx->dsq_load[0];
 
 		s64 load_imbalance = 0;
-		if(llcx->load > lb_llcx->load) {
+		if(llcx->load > lb_llcx->load)
 			load_imbalance = (100 * (llcx->load - lb_llcx->load)) / llcx->load;
-		}
 
 		dbg("LB load %llu interactive %llu, llcx[%u] %llu lb_llcx[%u] %llu imbalance %lli",
 			load_sum, interactive_sum, llc_id, llcx->load, lb_llc_id, lb_llcx->load, load_imbalance);
 
 		u32 lb_slack = (lb_slack_factor > 0 ? lb_slack_factor : LOAD_BALANCE_SLACK);
-		if (load_imbalance > lb_slack) {
+		if (load_imbalance > lb_slack)
 			llcx->lb_llc_id = lb_llc_id;
-		} else {
+		else
 			llcx->lb_llc_id = MAX_LLCS;
-		}
 	}
 	dbg("LB Total load %llu, Total interactive %llu", load_sum, interactive_sum);
 	llc_lb_offset = (llc_lb_offset % (nr_llcs - 1)) + 1;
