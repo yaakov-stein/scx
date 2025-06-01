@@ -420,27 +420,29 @@ static s32 pick_two_cpu(struct llc_ctx *cur_llcx, task_ctx *taskc,
 	if (scaled_load < wakeup_lb_busy)
 		return -EINVAL;
 
-	left = rand_llc_ctx();
-	right = rand_llc_ctx();
+	left = lookup_llc_ctx((cur_llcx->id + llc_lb_offset) % nr_llcs);
+	right = lookup_llc_ctx((cur_llcx->id + llc_lb_offset + 1) % nr_llcs);
 
 	if (!left || !right)
 		return -EINVAL;
 
 	// last ditch effort if same are picked.
-	if (unlikely(left->id == right->id)) {
-		right = rand_llc_ctx();
-		if (!right || left->id == right->id)
-			return -EINVAL;
-	}
+	// if (unlikely(left->id == right->id)) {
+	// 	right = rand_llc_ctx();
+	// 	if (!right || left->id == right->id)
+	// 		return -EINVAL;
+	// }
 
 	u64 left_load = left->load;
 	u64 right_load = right->load;
+	u32 lb_slack = (lb_slack_factor > 0 ? lb_slack_factor : LOAD_BALANCE_SLACK);
 
 	// If the other LLCs have more load than the current don't bother.
-	u64 slack_factor = (1 * cur_load) / 100;
-	if (slack_factor > 0)
-		cur_load += slack_factor;
-	if (left_load > cur_load && right_load > cur_load)
+	// u64 slack_factor = (1 * cur_load) / 100;
+	// if (slack_factor > 0)
+	// 	cur_load += slack_factor;
+	if (((100 * left_load) > ((100 + lb_slack) * cur_load)) &&
+		((100 * right_load) > ((100 + lb_slack) * cur_load)))
 		return -EINVAL;
 
 	if (left_load < right_load) {
