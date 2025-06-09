@@ -101,7 +101,6 @@ u32 sched_mode = MODE_PERFORMANCE;
 
 // private(LLC_BUDDY) struct scx_buddy buddy;
 
-
 static u64 scx_malloc(size_t size)
 {
 	return (u64)scx_static_alloc(size, 1);
@@ -335,27 +334,6 @@ static bool scx_bitmap_test_and_clear_cpu(u32 cpu, llc_ptr llcx, bool interactiv
 				llcx->idle_smtmask : llcx->idle_cpumask);
 }
 
-static s32 scx_bitmap_pick_cpu(scx_bitmap_t mask)
-{
-	int i;
-
-	bpf_for(i, 0, mask_size) {
-		if(mask->bits[i] != 0)
-			return i;
-	}
-
-	return -1;
-}
-
-static s32 scx_bitmap_pick_and_clear_cpu(scx_bitmap_t mask)
-{
-	s32 ret = scx_bitmap_pick_cpu(mask);
-	if (ret >= 0)
-		scx_bitmap_clear_cpu(ret, mask);
-
-	return ret;
-}
-
 /*
  * Returns a random llc_ctx
  */
@@ -425,7 +403,7 @@ static s32 pick_idle_affinitized_cpu(struct task_struct *p, task_ptr taskc,
 
 	// First try to find an idle SMT in the LLC
 	if (smt_enabled && llcx->idle_smtmask) {
-		cpu = scx_bitmap_pick_and_clear_cpu(llcx->idle_smtmask);
+		cpu = scx_bitmap_pick_any_cpu(llcx->idle_smtmask);
 		if (cpu >= 0) {
 			*is_idle = true;
 			goto found_cpu;
@@ -433,7 +411,7 @@ static s32 pick_idle_affinitized_cpu(struct task_struct *p, task_ptr taskc,
 	}
 
 	// Next try to find an idle CPU in the LLC
-	cpu = scx_bitmap_pick_and_clear_cpu(llcx->idle_cpumask);
+	cpu = scx_bitmap_pick_any_cpu(llcx->idle_cpumask);
 	if (cpu >= 0) {
 		*is_idle = true;
 		goto found_cpu;
@@ -443,7 +421,7 @@ static s32 pick_idle_affinitized_cpu(struct task_struct *p, task_ptr taskc,
 	if (llcx->node_cpumask && llcx->idle_cpumask && p->cpus_ptr) {
 		// scx_bitmap_and_cpumask(llcx->idle_cpumask, llcx->node_cpumask,
 		// 		p->cpus_ptr);
-		if ((cpu = scx_bitmap_pick_and_clear_cpu(llcx->idle_cpumask)) >= 0) {
+		if ((cpu = scx_bitmap_pick_any_cpu(llcx->idle_cpumask)) >= 0) {
 			*is_idle = true;
 			goto found_cpu;
 		}
@@ -463,9 +441,10 @@ static s32 pick_idle_cpu(struct task_struct *p, task_ptr taskc,
 	bool interactive = is_interactive(taskc);
 	s32 cpu = prev_cpu;
 
-	if (interactive_sticky && interactive) {
+	if (interactive_sticky && interactive &&
+		(prev_llcx = lookup_llc_ctx(taskc->llc_id))) {
 		cpu = prev_cpu;
-		*is_idle = scx_bpf_test_and_clear_cpu_idle(prev_cpu);
+		*is_idle = scx_bitmap_test_and_clear_cpu(prev_cpu, prev_llcx, interactive);
 		goto found_cpu;
 	}
 
@@ -510,13 +489,13 @@ static s32 pick_idle_cpu(struct task_struct *p, task_ptr taskc,
 			}
 			// Try an idle CPU in the LLC.
 			if (llcx->idle_cpumask &&
-			    (cpu = scx_bitmap_pick_and_clear_cpu(llcx->idle_cpumask)) >= 0) {
+			    (cpu = scx_bitmap_pick_any_cpu(llcx->idle_cpumask)) >= 0) {
 				stat_inc(P2DQ_STAT_WAKE_LLC);
 				*is_idle = true;
 				goto found_cpu;
 			}
 			if (llcx->idle_smtmask &&
-			    (cpu = scx_bitmap_pick_and_clear_cpu(llcx->idle_smtmask)) >= 0) {
+			    (cpu = scx_bitmap_pick_any_cpu(llcx->idle_smtmask)) >= 0) {
 				stat_inc(P2DQ_STAT_WAKE_LLC);
 				*is_idle = true;
 				goto found_cpu;
@@ -540,7 +519,7 @@ static s32 pick_idle_cpu(struct task_struct *p, task_ptr taskc,
 			}
 			// Try an idle core in the LLC.
 			if (llcx->idle_smtmask &&
-			    ((cpu = scx_bitmap_pick_and_clear_cpu(llcx->idle_smtmask))
+			    ((cpu = scx_bitmap_pick_any_cpu(llcx->idle_smtmask))
 							>= 0)) {
 				stat_inc(P2DQ_STAT_WAKE_LLC);
 				*is_idle = true;
@@ -548,7 +527,7 @@ static s32 pick_idle_cpu(struct task_struct *p, task_ptr taskc,
 			}
 			// Try an idle core in the LLC.
 			if (llcx->idle_cpumask &&
-			    ((cpu = scx_bitmap_pick_and_clear_cpu(llcx->idle_smtmask))
+			    ((cpu = scx_bitmap_pick_any_cpu(llcx->idle_smtmask))
 							>= 0)) {
 				stat_inc(P2DQ_STAT_WAKE_LLC);
 				*is_idle = true;
@@ -564,7 +543,7 @@ static s32 pick_idle_cpu(struct task_struct *p, task_ptr taskc,
 			goto found_cpu;
 
 		if (waker_llcx->idle_cpumask &&
-		    (cpu = scx_bitmap_pick_and_clear_cpu(waker_llcx->idle_cpumask)
+		    (cpu = scx_bitmap_pick_any_cpu(waker_llcx->idle_cpumask)
 						 ) >= 0) {
 			stat_inc(P2DQ_STAT_WAKE_MIG);
 			*is_idle = true;
@@ -573,7 +552,7 @@ static s32 pick_idle_cpu(struct task_struct *p, task_ptr taskc,
 
 		// Couldn't find an idle core so just migrate to the CPU
 		if (waker_llcx->idle_smtmask &&
-		    (cpu = scx_bitmap_pick_and_clear_cpu(waker_llcx->idle_smtmask)
+		    (cpu = scx_bitmap_pick_any_cpu(waker_llcx->idle_smtmask)
 						 ) >= 0) {
 			stat_inc(P2DQ_STAT_WAKE_MIG);
 			*is_idle = true;
@@ -594,13 +573,13 @@ static s32 pick_idle_cpu(struct task_struct *p, task_ptr taskc,
 
 	if (has_little_cores && llcx->little_cpumask && llcx->big_cpumask) {
 		if (interactive) {
-			if ((cpu = scx_bitmap_pick_and_clear_cpu(llcx->little_cpumask)
+			if ((cpu = scx_bitmap_pick_any_cpu(llcx->little_cpumask)
 							 ) >= 0) {
 				*is_idle = true;
 				goto found_cpu;
 			}
 		} else {
-			if ((cpu = scx_bitmap_pick_and_clear_cpu(llcx->big_cpumask)
+			if ((cpu = scx_bitmap_pick_any_cpu(llcx->big_cpumask)
 							 ) >= 0) {
 				*is_idle = true;
 				goto found_cpu;
@@ -611,7 +590,7 @@ static s32 pick_idle_cpu(struct task_struct *p, task_ptr taskc,
 	// Next try in the local LLC
 	if (!interactive &&
 	    llcx->idle_smtmask &&
-	    (cpu = scx_bitmap_pick_and_clear_cpu(llcx->idle_smtmask)
+	    (cpu = scx_bitmap_pick_any_cpu(llcx->idle_smtmask)
 							 ) >= 0) {
 		*is_idle = true;
 		goto found_cpu;
@@ -619,7 +598,7 @@ static s32 pick_idle_cpu(struct task_struct *p, task_ptr taskc,
 
 	// Try a idle CPU in the llc
 	if ( llcx->idle_cpumask &&
-	    (cpu = scx_bitmap_pick_and_clear_cpu(llcx->idle_cpumask)
+	    (cpu = scx_bitmap_pick_any_cpu(llcx->idle_cpumask)
 							 ) >= 0) {
 		*is_idle = true;
 		goto found_cpu;
@@ -627,7 +606,7 @@ static s32 pick_idle_cpu(struct task_struct *p, task_ptr taskc,
 
 	// Couldn't find anything idle just return something in the local LLC
 	if (interactive && llcx->cpumask)
-		cpu = scx_bitmap_any_distribute(llcx->cpumask);
+		cpu = scx_bitmap_pick_any_cpu(llcx->cpumask);
 	else
 		// non interactive tasks stay sticky
 		cpu = prev_cpu;
@@ -780,7 +759,8 @@ static __always_inline void async_p2dq_enqueue(struct enqueue_promise *ret,
 	}
 
 	update_vtime(p, cpuc, taskc, llcx->vtime);
-	if (scx_bpf_test_and_clear_cpu_idle(cpu)) {
+	if ((llcx = lookup_llc_ctx(cpuc->llc_id)) &&
+		scx_bitmap_test_and_clear_cpu(cpu, llcx, is_interactive(taskc))) {
 		scx_bpf_dsq_insert(p, SCX_DSQ_LOCAL_ON|cpu, taskc->slice_ns, enq_flags);
 		stat_inc(P2DQ_STAT_IDLE);
 		scx_bpf_kick_cpu(cpu, SCX_KICK_IDLE);
@@ -1529,7 +1509,7 @@ reset_load:
 			return false;
 
 		llcx->load = 0;
-		llcx->affn_load = 0;
+		__sync_fetch_and_and(&llcx->affn_load, 0);
 		llcx->last_period_ns = scx_bpf_now();
 		bpf_for(j, 0, nr_dsqs_per_llc) {
 			llcx->dsq_load[j] = 0;
