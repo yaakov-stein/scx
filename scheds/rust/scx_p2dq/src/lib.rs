@@ -233,15 +233,18 @@ macro_rules! init_open_skel {
 #[macro_export]
 macro_rules! init_skel {
     ($skel: expr) => {
-        for cpu in $crate::TOPO.all_cpus.values() {
-            $skel.maps.bss_data.big_core_ids[cpu.id] =
-                if cpu.core_type == ($crate::CoreType::Big { turbo: true }) {
-                    1
-                } else {
-                    0
-                };
-            $skel.maps.bss_data.cpu_llc_ids[cpu.id] = cpu.llc_id as u64;
-            $skel.maps.bss_data.cpu_node_ids[cpu.id] = cpu.node_id as u64;
+        for core in $crate::TOPO.all_cores.values() {
+            for (i, cpu) in core.cpus.values().enumerate() {
+                $skel.maps.bss_data.big_core_ids[cpu.id] =
+                    if cpu.core_type == ($crate::CoreType::Big { turbo: true }) {
+                        1
+                    } else {
+                        0
+                    };
+                $skel.maps.bss_data.cpu_smt_ids[cpu.id] = if $crate::TOPO.smt_enabled && i == 0 {0} else {1};
+                $skel.maps.bss_data.cpu_llc_ids[cpu.id] = cpu.llc_id as u64;
+                $skel.maps.bss_data.cpu_node_ids[cpu.id] = cpu.node_id as u64;
+            }
         }
         for llc in $crate::TOPO.all_llcs.values() {
             $skel.maps.bss_data.llc_ids[llc.id] = llc.id as u64;

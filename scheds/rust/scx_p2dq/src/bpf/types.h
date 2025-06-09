@@ -1,5 +1,19 @@
 #pragma once
 
+#define arena_lock_t arena_spinlock_t __arena *
+
+typedef struct task_p2dq __arena *task_ptr;
+struct task_p2dq;
+
+typedef struct cpu_ctx __arena *cpu_ptr;
+struct cpu_ctx;
+
+typedef struct llc_ctx __arena *llc_ptr;
+struct llc_ctx;
+
+typedef struct node_ctx __arena *node_ptr;
+struct node_ctx;
+
 struct p2dq_timer {
 	// if set to 0 the timer will only be scheduled once
 	u64 interval_ns;
@@ -15,8 +29,9 @@ struct cpu_ctx {
 	u64				dsq_id;
 	u64				slice_ns;
 	u32				perf;
-	bool				interactive;
-	bool				is_big;
+	bool			smt;
+	bool			interactive;
+	bool			is_big;
 	u64				ran_for;
 	u32				node_id;
 	u64				affn_max_vtime;
@@ -39,17 +54,21 @@ struct llc_ctx {
 	u64				dsqs[MAX_DSQS_PER_LLC];
 	u64				dsq_max_vtime[MAX_DSQS_PER_LLC];
 	u64				dsq_load[MAX_DSQS_PER_LLC];
-	struct bpf_cpumask __kptr	*cpumask;
-	struct bpf_cpumask __kptr	*big_cpumask;
-	struct bpf_cpumask __kptr	*little_cpumask;
-	struct bpf_cpumask __kptr	*node_cpumask;
+
+	scx_bitmap_t		cpumask;
+	scx_bitmap_t		idle_cpumask;
+	scx_bitmap_t		idle_smtmask;
+	scx_bitmap_t		smt_cpumask;
+	scx_bitmap_t		big_cpumask;
+	scx_bitmap_t		little_cpumask;
+	scx_bitmap_t		node_cpumask;
 };
 
 struct node_ctx {
-	u32				id;
-	bool				all_big;
-	struct bpf_cpumask __kptr	*cpumask;
-	struct bpf_cpumask __kptr	*big_cpumask;
+	u32						id;
+	bool					all_big;
+	scx_bitmap_t	cpumask; // Should these have a __arena?
+	scx_bitmap_t	big_cpumask;
 };
 
 struct task_p2dq {
@@ -60,8 +79,8 @@ struct task_p2dq {
 	u32			node_id;
 	u64			used;
 	u64			last_dsq_id;
-	u64 			last_run_started;
-	u64 			last_run_at;
+	u64 		last_run_started;
+	u64 		last_run_at;
 	u64			llc_runs; /* how many runs on the current LLC */
 	int			last_dsq_index;
 
@@ -70,9 +89,11 @@ struct task_p2dq {
 
 	/* Allowed to run on all CPUs */
 	bool			all_cpus;
+
+	scx_bitmap_t cpumask;
 };
 
-typedef struct task_p2dq __arena task_ctx;
+// typedef struct task_p2dq __arena task_ctx; Believe this can be removed due to line 5/6
 
 struct enqueue_promise_vtime {
 	u64	dsq_id;
