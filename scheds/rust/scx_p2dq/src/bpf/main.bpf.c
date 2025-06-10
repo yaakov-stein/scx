@@ -200,9 +200,9 @@ cpu_ptr lookup_cpu_ctx(int cpu)
 	cpu_ptr cpup;
 
 	if (cpu < 0)
-		cpup = try_lookup_cpu_ctx(0);
-	else
-		cpup = try_lookup_cpu_ctx(cpu);
+		cpu = 0;
+
+	cpup = try_lookup_cpu_ctx(cpu);
 
 	if (!cpup) {
 		scx_bpf_error("Failed to lookup cpu[%u]", cpu);
