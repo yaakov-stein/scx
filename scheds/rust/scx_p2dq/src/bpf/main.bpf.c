@@ -187,7 +187,11 @@ cpu_ptr try_lookup_cpu_ctx(int cpu)
 	if (!tmp)
 		return NULL;
 
-	return (cpu_ptr)tmp;
+	void *tmp2 = (void *)topo_nodes[TOPO_CPU][cpu];
+	if (!tmp2)
+		return NULL;
+
+	return (cpu_ptr)tmp2;
 }
 
 __hidden
@@ -216,6 +220,8 @@ static __always_inline u64 cpu_dsq_id(int dsq_index, cpu_ptr cpuc) {
 		scx_bpf_error("cpuc invalid dsq index: %d", dsq_index);
 		return 0;
 	}
+	u64 tmp = *MEMBER_VPTR(cpuc->dsqs, [dsq_index]);
+	dbg("DSQ DBG cpu_dsq_id: %llu", tmp);
 	return *MEMBER_VPTR(cpuc->dsqs, [dsq_index]);
 }
 
@@ -229,7 +235,19 @@ llc_ptr try_lookup_llc_ctx(u32 llc_id)
 	if (!tmp)
 		return NULL;
 
-	return (llc_ptr)tmp;
+	void *tmp2 = (void *)topo_nodes[TOPO_LLC][llc_id];
+	if (!tmp2)
+		return NULL;
+
+	// dbg("CFG llc_id: %u, MEMBER_VPTR addr: %p, REG addr: %p, llc_ptr->id: %u, reg_adds->id: %u, llc_ptr->index: %u",
+	// 	llc_id,
+	// 	(void *)MEMBER_VPTR(topo_nodes, [TOPO_LLC][llc_id]),
+	// 	topo_nodes[TOPO_LLC][llc_id],
+	// 	((llc_ptr)tmp)->id,
+	// 	((llc_ptr)topo_nodes[TOPO_LLC][llc_id])->id,
+	// 	((llc_ptr)tmp)->index);
+
+	return (llc_ptr)tmp2;
 }
 
 __hidden
@@ -254,7 +272,11 @@ node_ptr try_lookup_node_ctx(u32 node_id)
 	if (!tmp)
 		return NULL;
 
-	return (node_ptr)tmp;
+	void *tmp2 = (void *)topo_nodes[TOPO_NODE][node_id];
+	if (!tmp2)
+		return NULL;
+
+	return (node_ptr)tmp2;
 }
 
 __hidden
@@ -663,6 +685,7 @@ static __always_inline void async_p2dq_enqueue(struct enqueue_promise *ret,
 	task_ptr taskc;
 	s32 cpu = scx_bpf_task_cpu(p);
 
+	dbg("DSQ DBG: Entering enqueue");
 	/*
 	 * Per-cpu kthreads are considered interactive and dispatched directly
 	 * into the local DSQ.
@@ -675,12 +698,14 @@ static __always_inline void async_p2dq_enqueue(struct enqueue_promise *ret,
 		stat_inc(P2DQ_STAT_DIRECT);
 		scx_bpf_dsq_insert(p, SCX_DSQ_LOCAL_ON|cpu, dsq_time_slices[0], enq_flags);
 		ret->kind = P2DQ_ENQUEUE_PROMISE_COMPLETE;
+		dbg("DSQ DBG: Return 1");
 		return;
 	}
 
 	if(!(taskc = lookup_task_ctx(p))) {
 		scx_bpf_error("invalid lookup");
 		ret->kind = P2DQ_ENQUEUE_PROMISE_COMPLETE;
+		dbg("DSQ DBG: Return 2");
 		return;
 	}
 
@@ -718,6 +743,7 @@ static __always_inline void async_p2dq_enqueue(struct enqueue_promise *ret,
 			scx_bpf_dsq_insert_vtime(p, taskc->dsq_id, taskc->slice_ns, p->scx.dsq_vtime, enq_flags);
 
 		ret->kind = P2DQ_ENQUEUE_PROMISE_COMPLETE;
+		dbg("DSQ DBG: Return 3");
 		return;
 	}
 
@@ -729,6 +755,7 @@ static __always_inline void async_p2dq_enqueue(struct enqueue_promise *ret,
 		     !(llcx = lookup_llc_ctx(cpuc->llc_id))) {
 			scx_bpf_error("invalid lookup");
 			ret->kind = P2DQ_ENQUEUE_PROMISE_COMPLETE;
+			dbg("DSQ DBG: Return 4");
 			return;
 		}
 
@@ -738,6 +765,7 @@ static __always_inline void async_p2dq_enqueue(struct enqueue_promise *ret,
 			stat_inc(P2DQ_STAT_IDLE);
 			scx_bpf_kick_cpu(cpu, SCX_KICK_IDLE);
 			ret->kind = P2DQ_ENQUEUE_PROMISE_COMPLETE;
+			dbg("DSQ DBG: Return 5");
 			return;
 		}
 
@@ -748,6 +776,7 @@ static __always_inline void async_p2dq_enqueue(struct enqueue_promise *ret,
 			scx_bpf_dsq_insert_vtime(p, taskc->dsq_id, taskc->slice_ns, p->scx.dsq_vtime, enq_flags);
 
 		ret->kind = P2DQ_ENQUEUE_PROMISE_COMPLETE;
+		dbg("DSQ DBG: Return 6");
 		return;
 	}
 
@@ -755,6 +784,7 @@ static __always_inline void async_p2dq_enqueue(struct enqueue_promise *ret,
 	    !(llcx = lookup_llc_ctx(cpuc->llc_id))) {
 		scx_bpf_error("invalid lookup");
 		ret->kind = P2DQ_ENQUEUE_PROMISE_COMPLETE;
+		dbg("DSQ DBG: Return 7");
 		return;
 	}
 
@@ -765,6 +795,7 @@ static __always_inline void async_p2dq_enqueue(struct enqueue_promise *ret,
 		stat_inc(P2DQ_STAT_IDLE);
 		scx_bpf_kick_cpu(cpu, SCX_KICK_IDLE);
 		ret->kind = P2DQ_ENQUEUE_PROMISE_COMPLETE;
+		dbg("DSQ DBG: Return 8");
 		return;
 	}
 	taskc->dsq_id = cpu_dsq_id(taskc->dsq_index, cpuc);
@@ -781,6 +812,7 @@ static __always_inline void async_p2dq_enqueue(struct enqueue_promise *ret,
 		ret->vtime.slice_ns = taskc->slice_ns;
 		ret->vtime.vtime = p->scx.dsq_vtime;
 	}
+	dbg("DSQ DBG: Return 9 with kind %d and dsq_id %llu", ret->kind, ret->vtime.dsq_id);
 }
 
 static __always_inline void complete_p2dq_enqueue(struct enqueue_promise *pro,
@@ -790,12 +822,15 @@ static __always_inline void complete_p2dq_enqueue(struct enqueue_promise *pro,
 	case P2DQ_ENQUEUE_PROMISE_COMPLETE:
 		goto out;
 	case P2DQ_ENQUEUE_PROMISE_FIFO:
+		dbg("DSQ DBG ID [767] %d", pro->fifo.dsq_id);
 		scx_bpf_dsq_insert(p, pro->fifo.dsq_id, pro->fifo.slice_ns,
 				   pro->fifo.enq_flags);
 		goto out;
 	case P2DQ_ENQUEUE_PROMISE_VTIME:
+		dbg("DSQ DBG ID [772] %d", pro->vtime.dsq_id);
 		scx_bpf_dsq_insert_vtime(p, pro->vtime.dsq_id, pro->vtime.slice_ns,
 				         pro->vtime.vtime, pro->vtime.enq_flags);
+		dbg("DSQ DBG: Completed enqueue");
 		goto out;
 	}
 out:
@@ -1318,6 +1353,12 @@ static int init_llc(u32 llc_index)
 
 	topo_nodes[TOPO_LLC][llc_index] = (u64)llcx;
 
+	llc_ptr llc = lookup_llc_ctx(llc_index);
+	if (!llc)
+		return -EINVAL;
+
+	dbg("CFG: llc_index[%d], llcx->id[%d], llcx->index[%d] with llcx->nr_cpus[%u] configured with llc->id[%u], llc->index[%d] with llc->nr_cpus[%u]", llc_index, llcx->id, llcx->index, llcx->nr_cpus, llc->id, llc->index, llc->nr_cpus);
+
 	return 0;
 }
 
@@ -1368,6 +1409,7 @@ static s32 init_cpu(int cpu)
 		return -ENOENT;
 
 	cpuc->id = cpu;
+	// dbg("Assigned llc_id=%u to cpu=%u (cpu_llc_ids[%u]=%u)", cpu_llc_ids[cpu], cpu, cpu, cpu_llc_ids[cpu]);
 	cpuc->llc_id = cpu_llc_ids[cpu];
 	cpuc->smt = cpu_smt_ids[cpu] == 0;
 	cpuc->node_id = cpu_node_ids[cpu];
@@ -1384,6 +1426,7 @@ static s32 init_cpu(int cpu)
 
 	// copy for each cpu, doesn't matter if it gets overwritten.
 	llcx->nr_cpus += 1;
+	// dbg("llcx=%p: assigned id=%u from cpu_llc_ids[%u]=%u", llcx, cpu_llc_ids[cpu], cpu, cpu_llc_ids[cpu]);
 	llcx->id = cpu_llc_ids[cpu];
 	llcx->node_id = cpu_node_ids[cpu];
 	nodec->id = cpu_node_ids[cpu];
@@ -1621,6 +1664,14 @@ static __always_inline s32 p2dq_init_impl()
 			return ret;
 	}
 
+	bpf_for(i, 0, nr_llcs) {
+		llc_ptr llcx;
+		llcx = lookup_llc_ctx(i);
+		dbg("CFG llc_id = [%d], llcx->id = [%d]", i, llcx->id);
+		if (ret)
+			return ret;
+	}
+
 	bpf_for(i, 0, nr_nodes) {
 		ret = init_node(i);
 		if (ret)
@@ -1652,6 +1703,7 @@ static __always_inline s32 p2dq_init_impl()
 				return ret;
 			}
 
+			dbg("CFG llcx[%d]->dsqs[%d] = %llu", llcx->id, i, dsq_id);
 			llcx->dsqs[i] = dsq_id;
 			llcx->dsq_max_vtime[i] = 0;
 			llcx->vtime = 0;
@@ -1673,6 +1725,7 @@ static __always_inline s32 p2dq_init_impl()
 		}
 
 		bpf_for(j, 0, nr_dsqs_per_llc) {
+			dbg("CFG cpuc->dsqs[%d] = %llu from llcx[%d]", j, llcx->dsqs[j], llcx->id);
 			cpuc->dsqs[j] = llcx->dsqs[j];
 			dbg("CFG CPU[%d]DSQ[%d] %llu",
 			    i, j, cpuc->dsqs[j]);

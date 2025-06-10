@@ -93,8 +93,6 @@ struct task_p2dq {
 	scx_bitmap_t cpumask;
 };
 
-// typedef struct task_p2dq __arena task_ctx; Believe this can be removed due to line 5/6
-
 struct enqueue_promise_vtime {
 	u64	dsq_id;
 	u64	enq_flags;
