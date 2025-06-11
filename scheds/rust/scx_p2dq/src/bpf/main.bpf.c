@@ -842,8 +842,7 @@ static __always_inline void async_p2dq_enqueue(struct enqueue_promise *ret,
 		}
 
 		taskc->dsq_id = cpu_dsq_id(taskc->dsq_index, cpuc);
-		dbg("DSQ ID [717] %d", taskc->dsq_id);
-		if (interactive_fifo && taskc->dsq_index == 0) {
+		if (interactive_fifo && taskc->dsq_index == 0)
 			scx_bpf_dsq_insert(p, taskc->dsq_id, taskc->slice_ns, enq_flags);
 		else
 			scx_bpf_dsq_insert_vtime(p, taskc->dsq_id, taskc->slice_ns, p->scx.dsq_vtime, enq_flags);
@@ -891,15 +890,12 @@ static __always_inline void complete_p2dq_enqueue(struct enqueue_promise *pro,
 	case P2DQ_ENQUEUE_PROMISE_COMPLETE:
 		goto out;
 	case P2DQ_ENQUEUE_PROMISE_FIFO:
-		dbg("DSQ DBG ID [767] %d", pro->fifo.dsq_id);
 		scx_bpf_dsq_insert(p, pro->fifo.dsq_id, pro->fifo.slice_ns,
 				   pro->fifo.enq_flags);
 		goto out;
 	case P2DQ_ENQUEUE_PROMISE_VTIME:
-		dbg("DSQ DBG ID [772] %d", pro->vtime.dsq_id);
 		scx_bpf_dsq_insert_vtime(p, pro->vtime.dsq_id, pro->vtime.slice_ns,
 				         pro->vtime.vtime, pro->vtime.enq_flags);
-		dbg("DSQ DBG: Completed enqueue");
 		goto out;
 	}
 out:
