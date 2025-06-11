@@ -29,7 +29,6 @@ struct cpu_ctx {
 	u64				dsq_id;
 	u64				slice_ns;
 	u32				perf;
-	bool			smt;
 	bool			interactive;
 	bool			is_big;
 	u64				ran_for;
@@ -57,8 +56,8 @@ struct llc_ctx {
 
 	scx_bitmap_t		cpumask;
 	scx_bitmap_t		idle_cpumask;
-	scx_bitmap_t		idle_smtmask;
-	scx_bitmap_t		smt_cpumask;
+	scx_bitmap_t		idle_smt_coremask;
+	scx_bitmap_t		smt_coremask;
 	scx_bitmap_t		big_cpumask;
 	scx_bitmap_t		little_cpumask;
 	scx_bitmap_t		node_cpumask;

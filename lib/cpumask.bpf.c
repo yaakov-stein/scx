@@ -41,7 +41,7 @@ scx_bitmap_pick_any_cpu_once(scx_bitmap_t __arg_arena mask, u64 __arg_arena *sta
 	return -ENOSPC;
 }
 
-__weak s32
+__hidden s32
 scx_bitmap_pick_any_cpu_from(scx_bitmap_t __arg_arena mask, u64 __arg_arena *start)
 {
 	s32 cpu;
