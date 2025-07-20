@@ -530,22 +530,6 @@ impl<'a> App<'a> {
                 });
             };
         };
-        // Add entry for nodes
-        for node in self.topo.nodes.keys() {
-            let node_data = self
-                .node_data
-                .get_mut(node)
-                .expect("NodeData should have been present");
-            node_data.add_event_data(self.active_event.event_name(), 0);
-        }
-        // Add entry for llcs
-        for llc in self.topo.all_llcs.keys() {
-            let llc_data = self
-                .llc_data
-                .get_mut(llc)
-                .expect("LlcData should have been present");
-            llc_data.add_event_data(self.active_event.event_name(), 0);
-        }
 
         for (cpu, event) in &mut self.active_prof_events {
             let val = event.value(true)?;
