@@ -4,21 +4,13 @@
 // GNU General Public License version 2.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use scxtop::available_perf_events;
+use scxtop::available_kprobe_events;
 use scxtop::search;
 
 fn get_search() -> Vec<String> {
-    let mut available_perf_events_list: Vec<String> = available_perf_events()
-        .unwrap()
-        .into_iter()
-        .flat_map(|(subsystem, events)| {
-            events
-                .into_iter()
-                .map(move |event| format!("{}:{}", &subsystem, &event))
-        })
-        .collect();
-    available_perf_events_list.sort();
-    available_perf_events_list
+    let mut available_kprobe_events_list: Vec<String> = available_kprobe_events().unwrap();
+    available_kprobe_events_list.sort();
+    available_kprobe_events_list
 }
 
 fn bench_empty(c: &mut Criterion) {
@@ -88,7 +80,7 @@ fn bench_long_complex_string(c: &mut Criterion) {
 }
 
 fn configure_criterion() -> Criterion {
-    Criterion::default().measurement_time(std::time::Duration::new(10, 0))
+    Criterion::default().measurement_time(std::time::Duration::new(20, 0))
 }
 
 criterion_group!(

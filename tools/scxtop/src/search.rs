@@ -3,8 +3,6 @@
 // This software may be used and distributed according to the terms of the
 // GNU General Public License version 2.
 
-use std::cmp::min;
-
 #[allow(dead_code)]
 pub fn binary_search(entries: &[String], input: &str) -> Option<usize> {
     entries.binary_search_by(|s| s.as_str().cmp(input)).ok()
@@ -32,7 +30,7 @@ pub fn sorted_contains_all(entries: &[String], inputs: &[String]) -> bool {
  * We'll want check fuzzily in three ways using the following scoring system:
  * 1: Is it a substring (contains)? 100 points
  * 2: Is it contained in the string but not consecutive (contains_spread)? 100 - (length of input spread out - input length)
- * 3: If we take out one letter, is it now (1) or (2) - (contains_with_typo)? 75 - (length of input spread out - input length)
+ * 3: What is the # of edits needed to equalize the strings - (min_edit_distance)? 100 - (# of edits needed)
  *
  * This method will then return a Vec<String> with the highest scoring entries at the lowest indices
  */
@@ -50,13 +48,11 @@ pub fn fuzzy_search(entries: &[String], input: &str) -> Vec<String> {
         })
         .collect();
 
-    // We only check if our input has a typo if we haven't matched to anything else (for performance reasons)
+    // We only check the inputs edit distnace if we haven't matched to anything else (for performance reasons)
     if fuzzy_results.is_empty() {
         fuzzy_results = entries
             .iter()
-            .filter_map(|entry| {
-                contains_with_typo(&entry.to_lowercase(), input).map(|score| (entry, 75 - score))
-            })
+            .map(|entry| (entry, 100 - min_edit_distance(&entry.to_lowercase(), input)))
             .collect()
     }
 
@@ -111,28 +107,36 @@ pub fn contains_spread(word: &str, pattern: &str) -> Option<u32> {
     None
 }
 
-// Checks for typos by removing each character in pattern, one by one, and calling contains_spread
-fn contains_with_typo(word: &str, pattern: &str) -> Option<u32> {
-    if pattern.is_empty() {
-        return Some(0);
+// We use a space-optimized dynamic programming algorithm to optimally calculate the minimum levenshtein
+// distance between two strings (edit distance - https://en.wikipedia.org/wiki/Edit_distance#Common_algorithm).
+// Because we want "exit" and "do_later_exit" to be closer than "exit" and "blah", we slightly change the
+// algorithm to make deletions free.
+fn min_edit_distance(word: &str, pattern: &str) -> u32 {
+    let p = pattern.as_bytes();
+    let w = word.as_bytes();
+    let p_len = p.len();
+    let w_len = w.len();
+
+    // DP rows, we don't need to maintain the whole word * pattern table
+    let mut prev_row: Vec<usize> = (0..=p_len).collect();
+    let mut curr_row = vec![0; p_len + 1];
+
+    for j in 1..=w_len {
+        for i in 1..=p_len {
+            curr_row[i] = if p[i - 1] == w[j - 1] {
+                prev_row[i - 1]
+            } else {
+                (prev_row[i - 1] + 1) // substitution
+                    .min(curr_row[i - 1] + 1) // insertion
+                    .min(prev_row[i]) // deletion (free)
+            };
+        }
+
+        std::mem::swap(&mut prev_row, &mut curr_row);
     }
 
-    let mut modified_pattern = String::with_capacity(pattern.len() - 1);
-    let mut result = None;
-
-    for i in 0..pattern.len() {
-        modified_pattern.push_str(&pattern[..i]);
-        modified_pattern.push_str(&pattern[i + 1..]);
-
-        result = match (result, contains_spread(word, &modified_pattern)) {
-            (Some(score_a), Some(score_b)) => Some(min(score_a, score_b)),
-            (Some(score), None) | (None, Some(score)) => Some(score),
-            (_, _) => None,
-        };
-
-        modified_pattern.clear();
-    }
-    result
+    // Because of the last swap, the answer is in prev_row now
+    prev_row[p_len] as u32
 }
 
 #[cfg(test)]
@@ -216,47 +220,6 @@ mod tests {
     }
 
     #[test]
-    fn test_contains_with_typo_empty() {
-        assert_eq!(
-            contains_with_typo("btrfs:btrfs_reserve_extent", ""),
-            Some(0)
-        );
-    }
-
-    #[test]
-    fn test_contains_with_typo_basic() {
-        let word = "syscalls:sys_exit_pselect6";
-
-        let result_a = contains_with_typo(word, "exlt");
-        let result_b = contains_with_typo(word, "sbsexit");
-
-        assert_eq!(result_a, Some(1));
-        assert_eq!(result_b, Some(11));
-    }
-
-    #[test]
-    fn test_contains_with_typo_complex() {
-        let word = "xhci-hcd:xhci_address_ctrl_ctx";
-
-        let result_a = contains_with_typo(word, "hizdes");
-        let result_b = contains_with_typo(word, "xxxx");
-
-        assert_eq!(result_a, Some(14));
-        assert_eq!(result_b, Some(27));
-    }
-
-    #[test]
-    fn test_contains_with_typo_cannot_find() {
-        let word = "btrfs:btrfs_reserve_extent";
-
-        let result_a = contains_with_typo(word, "btrzz");
-        let result_b = contains_with_typo(word, "ww");
-
-        assert_eq!(result_a, None);
-        assert_eq!(result_b, None);
-    }
-
-    #[test]
     fn test_fuzzy_search_empty() {
         let mut events = test_events();
         events.sort();
@@ -329,7 +292,6 @@ mod tests {
         events.sort();
         let results = fuzzy_search(&events, "alrMtIImeralarmmer_cacEL");
 
-        assert_eq!(results.len(), 1);
         assert_eq!(results[0], "alarmtimer:alarmtimer_cancel".to_string());
     }
 
@@ -434,5 +396,70 @@ mod tests {
             ],
         );
         assert!(result2);
+    }
+
+    #[test]
+    fn test_exact_match() {
+        assert_eq!(min_edit_distance("exit", "exit"), 0);
+        assert_eq!(min_edit_distance("", ""), 0);
+    }
+
+    #[test]
+    fn test_substitution() {
+        // One char off
+        assert_eq!(min_edit_distance("exit", "exot"), 1);
+        assert_eq!(min_edit_distance("exit", "exix"), 1);
+    }
+
+    #[test]
+    fn test_insertion() {
+        // Insertion in pattern costs 1
+        assert_eq!(min_edit_distance("exit", "exiit"), 1);
+    }
+
+    #[test]
+    fn test_deletion_free() {
+        // Deletions from word are free
+        // "exit" vs "do_later_exit": insertion/substitution cost only
+        // classical Levenshtein would be 9, here should be 0
+        assert_eq!(min_edit_distance("do_later_exit", "exit"), 0);
+    }
+
+    #[test]
+    fn test_interspersed_deletion_free() {
+        assert_eq!(min_edit_distance("ahbecldleo", "hello"), 0);
+    }
+
+    #[test]
+    fn test_empty_strings() {
+        // Pattern empty → no cost since deletion is free, even if word is long
+        assert_eq!(min_edit_distance("anyword", ""), 0);
+
+        // Word empty, pattern non-empty → cost equals pattern length (insertions)
+        assert_eq!(min_edit_distance("", "pattern"), "pattern".len() as u32);
+    }
+
+    #[test]
+    fn test_classical() {
+        // Classical edit distance between "exit" and "blah" is 4
+        // Our fuzzy should not be better here because strings are very different
+        assert_eq!(min_edit_distance("blah", "exit"), 4);
+    }
+
+    #[test]
+    fn test_pattern_longer_than_word() {
+        // Pattern longer than word → should cost at least pattern.len() - word.len()
+        // because insertions are penalized
+        let word = "cat";
+        let pattern = "caterpillar";
+        let dist = min_edit_distance(word, pattern);
+        assert!(dist >= (pattern.len() - word.len()) as u32);
+    }
+
+    #[test]
+    fn test_case_sensitivity() {
+        // Case sensitive: different case counts as substitution
+        assert_eq!(min_edit_distance("Exit", "exit"), 1);
+        assert_eq!(min_edit_distance("EXIT", "exit"), 4);
     }
 }
